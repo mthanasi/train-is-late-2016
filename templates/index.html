@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <!-- The above 3 meta tags *must* come first in the head; any other head content must come *after* these tags -->
+  <title>trainislate</title>
+
+  <style>
+  #stations {
+    position: absolute;
+    float: left;
+    width: 25%;
+  }
+
+  #head {
+    margin-top: 1em;
+  }
+
+  #map {
+      width:100%;
+      height:100%;
+      position: absolute;
+      top: 0px;
+      left: 0px;
+  }
+
+  #mapholder {
+    margin-left: auto;
+    margin-right: auto;
+  }
+
+  </style>
+
+  <script src="https://code.jquery.com/jquery-3.1.1.min.js" integrity="sha256-hVVnYaiADRTO2PzUGmuLJr8BLUSjGIZsDYGmIJLv2b8=" crossorigin="anonymous"></script>
+  <script type="text/javascript" src="https://www.gstatic.com/charts/loader.js"></script>
+
+  <!-- Latest compiled and minified CSS -->
+  <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap.min.css" integrity="sha384-BVYiiSIFeK1dGmJRAkycuHAHRg32OmUcww7on3RYdg4Va+PmSTsz/K68vbdEjh4u" crossorigin="anonymous">
+
+  <!-- Optional theme -->
+  <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap-theme.min.css" integrity="sha384-rHyoN1iRsVXV4nD0JutlnGaslCJuC7uwjduW9SVrLvRYooPp2bWYgmgJQIXwl/Sp" crossorigin="anonymous">
+
+  <!-- Latest compiled and minified JavaScript -->
+  <script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/js/bootstrap.min.js" integrity="sha384-Tc5IQib027qvyjSMfHjOMaLkfuWVxZxUPnCJA7l2mCWNIpG9mGCD8wGNIcPD7Txa" crossorigin="anonymous"></script>
+</head>
+<body>
+  <div class="container-fluid">
+    <div class="row">
+      <div class="col-md-12">
+        <div class="jumbotron" id="head">
+          <h1 id="demo">Locating You</h1>
+        </div>
+      </div>
+    </div>
+    <div class="row">
+      <div class="col-md-12">
+        <div id="wrap">
+          <div id="map">
+
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="histo">
+
+    </div>
+  </div>
+  <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyAJooXi2ZZ0ADDY61D6bbxWAxpYqVoIsDc&callback=initMap"
+  async defer></script>
+  <script type="text/javascript">
+
+      var demoElem = "#demo";
+      var stationList = "#head";
+
+      var distAPIUrl = function(lat, lon, dist) {  return "https://data.sbb.ch/api/records/1.0/search/?dataset=haltestelle-offnungszeiten&facet=stationsbezeichnung&facet=service&geofilter.distance=" + lat + "%2C" + lon + "%2C" + dist;
+      }
+
+      var initMap = function(lat, lon) {
+        // Create a map object and specify the DOM element for display.
+        var map = new google.maps.Map(document.getElementById('map'), {
+          scrollwheel: false,
+          zoom: 8
+        });
+
+        var latLng = new google.maps.LatLng(lat, lon);
+        map.setCenter(latLng);
+      }
+
+      function getLocation() {
+          if (navigator.geolocation) {
+              navigator.geolocation.getCurrentPosition(showPosition, showError);
+          } else {
+              $(demoElem).text("Geolocation is not supported by this browser.");
+          }
+      }
+      function showPosition(position) {
+          console.log("showPosition");
+
+          var lat = position.coords.latitude;
+          var lon = position.coords.longitude;
+
+          var latlon = lat + "," + lon;
+
+          var img_url = "https://maps.googleapis.com/maps/api/staticmap?center=" + latlon + "&zoom=14&size=640x400&style=element:labels|visibility:on&style=element:geometry.stroke|visibility:off&style=feature:landscape|element:geometry|saturation:-100&style=feature:water|saturation:-100|invert_lightness:true&key=AIzaSyAJooXi2ZZ0ADDY61D6bbxWAxpYqVoIsDc";
+
+          var stations = [];
+
+          $.getJSON(distAPIUrl(lat, lon, 5000), function(data) {
+            var recs = data.records;
+
+            for (rec of recs) {
+              if(stations.filter(function(f) {
+                return f.dst_nr === rec.fields.dst_nr;
+              }).length > 0) {
+                continue;
+              }
+              stations.push({
+                'pos': rec.fields.geopos,
+                'name': rec.fields.stationsbezeichnung,
+                'id': 8500000 + rec.fields.dst_nr,
+                'dst_nr': rec.fields.dst_nr
+              });
+            }
+
+            console.log("Stations: ", stations);
+
+            var sList = $(stationList).empty();
+
+            for (station of stations) {
+              console.log(station.id);
+              $.get('/stop.json?id=' + station.id, {}, function (data) {
+                var d = JSON.parse(data);
+                console.log("received stop info", d);
+                var all = d["all"];
+                var late = d["late"];
+                var ontime = all - late;
+
+                 var elem = $("<h1 data-id='" + station.id + "'>" + station.name + " <small>average delay = "+d["delay"]+" seconds</small></h1>");
+                 sList.append(elem);
+
+                console.log(d["delays"]);
+
+                google.charts.load("current", {packages: ["corechart"]});
+                google.charts.setOnLoadCallback(function () {
+                  var gdata = google.visualization.arrayToDataTable(d["delays"]);
+
+                  var options = {
+                    title: 'train delays over time',
+                    hAxis: {title: 'Time', minValue: 0, maxValue: 15},
+                    vAxis: {title: 'Delays', minValue: 0, maxValue: 500},
+                    legend: 'none'
+                  };
+
+                  var chart = new google.visualization.ScatterChart(document.getElementById('histo'));
+
+                  chart.draw(gdata, options);
+
+                });
+              });
+
+
+            }
+          });
+
+          document.getElementById("mapholder").innerHTML = "<img src='"+img_url+"'>";
+      }
+      function showError(error) {
+          switch(error.code) {
+              case error.PERMISSION_DENIED:
+                  $(demoElem).text("User denied the request for Geolocation.")
+                  break;
+              case error.POSITION_UNAVAILABLE:
+                  $(demoElem).text("Location information is unavailable.")
+                  break;
+              case error.TIMEOUT:
+                  $(demoElem).text("The request to get user location timed out.")
+                  break;
+              case error.UNKNOWN_ERROR:
+                  $(demoElem).text("An unknown error occurred.")
+                  break;
+          }
+      }
+      (function(){
+        console.log("Getting location...");
+        getLocation();
+      }());
+  </script>
+</body>
+</html>

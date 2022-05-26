@@ -1,0 +1,8 @@
+{
+  "success": true,
+  "id": "{{ id }}",
+  "all": {{ all }},
+  "late": {{ late }},
+  "delay": {{ delay }},
+  "delays": {{ delays }}
+}
